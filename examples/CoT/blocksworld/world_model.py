@@ -230,7 +230,13 @@ class BlocksWorldModel(WorldModel):
             if fallback:
                 return fallback
             # 模型说动作无效/状态不变时，直接返回当前状态
-            if "unchanged" in world_output.lower() or "remains unchanged" in world_output.lower():
+            out_lower = world_output.lower()
+            if (
+                "unchanged" in out_lower
+                or "remains unchanged" in out_lower
+                or ("invalid" in out_lower and "on top of itself" in out_lower)
+                or "cannot stack a block on top of itself" in out_lower
+            ):
                 return block_states
             raise
 

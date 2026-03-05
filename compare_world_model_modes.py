@@ -116,7 +116,13 @@ def main():
         "--n_ctx",
         type=int,
         default=1024,
-        help="本地模型 context 长度，70B 显存紧时可设为 1024 减少占用",
+        help="本地模型 context 长度，70B 显存紧时可设为 512",
+    )
+    parser.add_argument(
+        "--n_gpu_layers",
+        type=int,
+        default=-1,
+        help="放到 GPU 的层数，-1=全部；OOM 时可设为 40 把部分层放 CPU",
     )
     args = parser.parse_args()
     if not args.local_model_path:
@@ -209,8 +215,8 @@ def main():
 
             local_lm = LlamaCppModel(
                 path=args.local_model_path,
-                n_ctx=args.n_ctx,
-                n_gpu_layers=args.n_gpu_layers,
+                n_ctx=getattr(args, "n_ctx", 1024),
+                n_gpu_layers=getattr(args, "n_gpu_layers", -1),
             )
             base_wm_local = BlocksWorldModel(
                 base_model=local_lm,
