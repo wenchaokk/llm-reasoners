@@ -213,7 +213,15 @@ class BlocksWorldModel(WorldModel):
             temperature=0            # 贪心解码（确定性）
         ).text[0].strip()
         
-        # 先尝试用 apply_change 解析 [CHANGE] 格式；失败时尝试从输出中抽取 [STATE 1] 或状态子句
+        # 预处理：去掉尾部 ".\n[state 1] i have that" 等，否则 apply_change 解析会失败
+        world_output = re.sub(
+            r"\.\s*\n\s*\[state\s*\d+\].*$",
+            ".",
+            world_output,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip().rstrip(".")
+        
+        # 先尝试用 apply_change 解析 [CHANGE] 格式；失败时尝试 fallback 或「状态不变」
         try:
             new_state = utils.apply_change(world_output, block_states)
             return new_state
@@ -221,6 +229,9 @@ class BlocksWorldModel(WorldModel):
             fallback = _extract_state_from_output(world_output)
             if fallback:
                 return fallback
+            # 模型说动作无效/状态不变时，直接返回当前状态
+            if "unchanged" in world_output.lower() or "remains unchanged" in world_output.lower():
+                return block_states
             raise
 
     def is_terminal(self, state: BWState) -> bool:

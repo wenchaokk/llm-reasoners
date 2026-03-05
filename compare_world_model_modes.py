@@ -112,6 +112,12 @@ def main():
         default="gpt-4o-mini",
         help="OpenAI 模型名",
     )
+    parser.add_argument(
+        "--n_ctx",
+        type=int,
+        default=1024,
+        help="本地模型 context 长度，70B 显存紧时可设为 1024 减少占用",
+    )
     args = parser.parse_args()
     if not args.local_model_path:
         models_dir = os.path.join(_root, "models")
@@ -201,7 +207,11 @@ def main():
             from reasoners.lm import LlamaCppModel
             from reasoners.world_model import CachedWorldModel, MemoryStore
 
-            local_lm = LlamaCppModel(path=args.local_model_path)
+            local_lm = LlamaCppModel(
+                path=args.local_model_path,
+                n_ctx=args.n_ctx,
+                n_gpu_layers=args.n_gpu_layers,
+            )
             base_wm_local = BlocksWorldModel(
                 base_model=local_lm,
                 prompt=prompt,
