@@ -4,6 +4,7 @@
 积木世界问题：给定初始积木排列和目标排列，找到移动积木的序列。
 """
 
+import re
 from typing import NamedTuple
 import reasoners.benchmark.bw_utils as utils
 from reasoners import WorldModel, LanguageModel
@@ -11,6 +12,46 @@ import copy
 
 # 动作类型：字符串，例如 "pick up the red block"
 BWAction = str
+
+
+def _extract_state_from_output(text: str):
+    """当 apply_change 解析失败时，尝试从模型输出中抽取状态子句（如 [STATE 1] 或直接的状态列表）。
+    返回 None 表示无法解析。
+    """
+    if not text or not text.strip():
+        return None
+    text = text.strip()
+    # 1) 匹配 [STATE 1] I have that, clause1, clause2, ...
+    m = re.search(r"\[STATE\s*\d+\]\s*I have that\s*[,:]?\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+    if m:
+        rest = m.group(1).strip()
+        clauses = [s.strip().strip(".") for s in re.split(r"[,;\n]", rest) if s.strip()]
+    else:
+        # 2) 可能是 Python 列表字符串 ['a', 'b'] 或 多行/逗号分隔的状态子句
+        if text.startswith("["):
+            try:
+                import ast
+                clauses = ast.literal_eval(text)
+                if isinstance(clauses, list) and clauses:
+                    clauses = [str(c).strip().strip(".") for c in clauses if c]
+                else:
+                    return None
+            except Exception:
+                clauses = [s.strip().strip(".").strip("'\"") for s in re.split(r"[,;\n]", text) if s.strip()]
+        else:
+            clauses = [s.strip().strip(".") for s in re.split(r"[,;\n]", text) if s.strip()]
+    # 只保留像状态子句的：hand is ... / the X block is ...
+    valid = []
+    for c in clauses:
+        c = c.strip()
+        if not c or "have that" in c.lower() or c.lower().startswith("[state"):
+            continue
+        if "hand is " in c or " the " in c and " block " in c and " is " in c:
+            valid.append(c)
+    if not valid:
+        return None
+    valid = sorted(valid)
+    return ", ".join(valid) + "."
 
 class BWState(NamedTuple):
     """积木世界的状态表示
@@ -172,9 +213,15 @@ class BlocksWorldModel(WorldModel):
             temperature=0            # 贪心解码（确定性）
         ).text[0].strip()
         
-        # 应用 LLM 的输出到当前状态，得到新状态
-        new_state = utils.apply_change(world_output, block_states)
-        return new_state
+        # 先尝试用 apply_change 解析 [CHANGE] 格式；失败时尝试从输出中抽取 [STATE 1] 或状态子句
+        try:
+            new_state = utils.apply_change(world_output, block_states)
+            return new_state
+        except Exception:
+            fallback = _extract_state_from_output(world_output)
+            if fallback:
+                return fallback
+            raise
 
     def is_terminal(self, state: BWState) -> bool:
         """判断状态是否为终止状态
